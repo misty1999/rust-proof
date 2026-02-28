@@ -1,3 +1,4 @@
+mod binnat;
 mod input;
 mod logic;
 mod nat;
