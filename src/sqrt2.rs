@@ -21,18 +21,43 @@ pub type P7 = DblP1<DblP1<One>>;
 pub type P8 = Dbl<Dbl<Dbl<One>>>;
 
 // ============================================================
+// Sealed trait + BinNat: 閉じた自然数型
+//
+// sealed trait パターンにより、外部からの BinNat 実装を禁止。
+// これにより Dbl<String> や Evil のような不正な型が
+// BinSquare / Sqrt2Irr を実装することを防ぐ。
+//
+// 閉鎖性: BinNat を実装できるのは One, Dbl<N>, DblP1<N> のみ
+// （sealed::Sealed が非公開モジュール内にあるため）
+// ============================================================
+
+mod sealed {
+    pub trait Sealed {}
+}
+
+pub trait BinNat: sealed::Sealed {}
+
+impl sealed::Sealed for One {}
+impl<N: BinNat> sealed::Sealed for Dbl<N> {}
+impl<N: BinNat> sealed::Sealed for DblP1<N> {}
+
+impl BinNat for One {}
+impl<N: BinNat> BinNat for Dbl<N> {}
+impl<N: BinNat> BinNat for DblP1<N> {}
+
+// ============================================================
 // 型レベル算術: 後者関数 (increment)
 // ============================================================
 
-pub trait BinSucc { type Result; }
+pub trait BinSucc: BinNat { type Result: BinNat; }
 
 impl BinSucc for One {
     type Result = Dbl<One>; // 1+1 = 2
 }
-impl<N> BinSucc for Dbl<N> {
+impl<N: BinNat> BinSucc for Dbl<N> {
     type Result = DblP1<N>; // 2n+1
 }
-impl<N: BinSucc> BinSucc for DblP1<N> {
+impl<N: BinNat + BinSucc> BinSucc for DblP1<N> {
     type Result = Dbl<N::Result>; // 2(n+1)
 }
 
@@ -40,38 +65,38 @@ impl<N: BinSucc> BinSucc for DblP1<N> {
 // 型レベル算術: 加算
 // ============================================================
 
-pub trait BinAdd<B> { type Result; }
+pub trait BinAdd<B: BinNat>: BinNat { type Result: BinNat; }
 
 // One + x
 impl BinAdd<One> for One {
     type Result = Dbl<One>; // 1+1=2
 }
-impl<N> BinAdd<Dbl<N>> for One {
+impl<N: BinNat> BinAdd<Dbl<N>> for One {
     type Result = DblP1<N>; // 1+2n = 2n+1
 }
-impl<N: BinSucc> BinAdd<DblP1<N>> for One {
+impl<N: BinNat + BinSucc> BinAdd<DblP1<N>> for One {
     type Result = Dbl<N::Result>; // 1+(2n+1) = 2(n+1)
 }
 
 // Dbl<A> + x
-impl<A> BinAdd<One> for Dbl<A> {
+impl<A: BinNat> BinAdd<One> for Dbl<A> {
     type Result = DblP1<A>; // 2a+1
 }
-impl<A: BinAdd<B>, B> BinAdd<Dbl<B>> for Dbl<A> {
+impl<A: BinNat + BinAdd<B>, B: BinNat> BinAdd<Dbl<B>> for Dbl<A> {
     type Result = Dbl<<A as BinAdd<B>>::Result>; // 2a+2b = 2(a+b)
 }
-impl<A: BinAdd<B>, B> BinAdd<DblP1<B>> for Dbl<A> {
+impl<A: BinNat + BinAdd<B>, B: BinNat> BinAdd<DblP1<B>> for Dbl<A> {
     type Result = DblP1<<A as BinAdd<B>>::Result>; // 2a+(2b+1) = 2(a+b)+1
 }
 
 // DblP1<A> + x
-impl<A: BinSucc> BinAdd<One> for DblP1<A> {
+impl<A: BinNat + BinSucc> BinAdd<One> for DblP1<A> {
     type Result = Dbl<A::Result>; // (2a+1)+1 = 2(a+1)
 }
-impl<A: BinAdd<B>, B> BinAdd<Dbl<B>> for DblP1<A> {
+impl<A: BinNat + BinAdd<B>, B: BinNat> BinAdd<Dbl<B>> for DblP1<A> {
     type Result = DblP1<<A as BinAdd<B>>::Result>; // (2a+1)+2b = 2(a+b)+1
 }
-impl<A: BinAdd<B>, B> BinAdd<DblP1<B>> for DblP1<A>
+impl<A: BinNat + BinAdd<B>, B: BinNat> BinAdd<DblP1<B>> for DblP1<A>
 where
     <A as BinAdd<B>>::Result: BinSucc,
 {
@@ -86,15 +111,15 @@ where
 //   (2k+1)²  = 4k²+4k+1     = DblP1<Dbl<k²+k>>
 // ============================================================
 
-pub trait BinSquare { type Result; }
+pub trait BinSquare: BinNat { type Result: BinNat; }
 
 impl BinSquare for One {
     type Result = One; // 1² = 1 (奇数!)
 }
-impl<N: BinSquare> BinSquare for Dbl<N> {
+impl<N: BinNat + BinSquare> BinSquare for Dbl<N> {
     type Result = Dbl<Dbl<N::Result>>; // (2n)² = 4n² (偶数!)
 }
-impl<N: BinSquare> BinSquare for DblP1<N>
+impl<N: BinNat + BinSquare> BinSquare for DblP1<N>
 where
     N::Result: BinAdd<N>,
 {
@@ -151,6 +176,7 @@ pub fn dbl_injective<X, Y>(eq: Eq<Dbl<X>, Dbl<Y>>) -> Eq<X, Y> {
 //           → Eq<Square<Q>, Dbl<Square<K>>> に帰着（降下）
 //
 // --- コンパイラが検証する部分 ---
+//   - BinNat: sealed trait により型の閉鎖性を保証
 //   - BinSquare: 型レベル2乗の計算結果
 //   - discriminate: 奇数型 ≠ 偶数型 (transport経由)
 //   - dbl_injective: Dbl<X>=Dbl<Y> → X=Y (transport経由)
@@ -158,17 +184,18 @@ pub fn dbl_injective<X, Y>(eq: Eq<Dbl<X>, Dbl<Y>>) -> Eq<X, Y> {
 //
 // --- 公理（コンパイラが検証しない部分） ---
 //   - transport: Eq<A,B> → F(A) → F(B) (unsafe)
-//   - 構造的帰納法の原理: {One, Dbl, DblP1} 上の再帰は停止する (unsafe)
+//   - BinNat の整礎性: 無限降下する BinNat は存在しない
+//   - 構造的帰納法の原理: 上記から従う (unsafe)
 // ============================================================
 
-pub trait Sqrt2Irr<Q: BinSquare>: BinSquare {
+pub trait Sqrt2Irr<Q: BinNat + BinSquare>: BinNat + BinSquare {
     fn prove(
         eq: Eq<<Self as BinSquare>::Result, Dbl<<Q as BinSquare>::Result>>,
     ) -> False;
 }
 
 /// P = 1 (奇数): 1² = 1(奇数) ≠ Dbl<_>(偶数) → 矛盾
-impl<Q: BinSquare> Sqrt2Irr<Q> for One {
+impl<Q: BinNat + BinSquare> Sqrt2Irr<Q> for One {
     fn prove(
         eq: Eq<One, Dbl<<Q as BinSquare>::Result>>,
     ) -> False {
@@ -177,7 +204,7 @@ impl<Q: BinSquare> Sqrt2Irr<Q> for One {
 }
 
 /// P = 2N+1 (奇数): (2N+1)² = DblP1<_>(奇数) ≠ Dbl<_>(偶数) → 矛盾
-impl<N: BinSquare, Q: BinSquare> Sqrt2Irr<Q> for DblP1<N>
+impl<N: BinNat + BinSquare, Q: BinNat + BinSquare> Sqrt2Irr<Q> for DblP1<N>
 where
     N::Result: BinAdd<N>,
 {
@@ -192,7 +219,7 @@ where
 }
 
 /// P = 2K (偶数): (2K)²=4K²=2Q² → Q²=2K² → (Q, K) に降下
-impl<K: BinSquare, Q: BinSquare + Sqrt2Irr<K>> Sqrt2Irr<Q> for Dbl<K> {
+impl<K: BinNat + BinSquare, Q: BinNat + BinSquare + Sqrt2Irr<K>> Sqrt2Irr<Q> for Dbl<K> {
     fn prove(
         eq: Eq<
             Dbl<Dbl<<K as BinSquare>::Result>>,
