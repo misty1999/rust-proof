@@ -2,7 +2,7 @@
 
 use crate::logic::*;
 use crate::nat::*;
-use crate::sqrt2::{self, BinSquare, Sqrt2Irr};
+use crate::sqrt2::{self, Accessible, BinSquare, Sqrt2Irr};
 
 // ============================================================
 // 算術の定理（仮定なし）
@@ -33,7 +33,7 @@ pub fn zero_plus_n_is_n<N>() -> Eq<<Zero as Add<N>>::Result, N> {
 // ============================================================
 
 /// ∀ P, Q ∈ ℕ⁺: p² ≠ 2q²
-pub fn sqrt2_irr<P: Sqrt2Irr<Q>, Q: BinSquare>(
+pub fn sqrt2_irr<P: Sqrt2Irr<Q>, Q: Accessible + BinSquare>(
     eq: Eq<<P as BinSquare>::Result, sqrt2::Dbl<<Q as BinSquare>::Result>>,
 ) -> False {
     P::prove(eq)
